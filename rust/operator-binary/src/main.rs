@@ -1,6 +1,8 @@
 mod config;
 mod controller;
 mod monitoring;
+mod decommission;
+mod rest;
 
 use clap::Parser;
 use futures::stream::StreamExt;

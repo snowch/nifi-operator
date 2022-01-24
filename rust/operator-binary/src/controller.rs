@@ -1,25 +1,30 @@
 //! Ensures that `Pod`s are configured and running for each [`NifiCluster`]
 
-use crate::config;
 use crate::config::{
     build_authorizers_xml, build_bootstrap_conf, build_logback_xml, build_nifi_properties,
     build_state_management_xml, validated_product_config, NifiRepository, NIFI_BOOTSTRAP_CONF,
     NIFI_PROPERTIES, NIFI_STATE_MANAGEMENT_XML,
 };
+use crate::decommission::{decommission_nodes, is_decommissioning, is_shrinking};
+use crate::{config, decommission};
 use rand::{distributions::Alphanumeric, Rng};
 use snafu::{OptionExt, ResultExt, Snafu};
-use stackable_nifi_crd::NifiLogConfig;
+use stackable_nifi_crd::authentication::NifiAuthenticationMethod;
 use stackable_nifi_crd::{
     NifiCluster, NifiRole, HTTPS_PORT, HTTPS_PORT_NAME, METRICS_PORT, METRICS_PORT_NAME,
     PROTOCOL_PORT, PROTOCOL_PORT_NAME,
 };
+use stackable_nifi_crd::{NifiLogConfig, NifiSpec};
 use stackable_nifi_crd::{APP_NAME, BALANCE_PORT, BALANCE_PORT_NAME};
 use stackable_operator::client::Client;
+use stackable_operator::error::Error::KubeError;
+use stackable_operator::error::OperatorResult;
 use stackable_operator::k8s_openapi::api::core::v1::{
     Affinity, CSIVolumeSource, EnvVar, EnvVarSource, Node, ObjectFieldSelector, PodAffinityTerm,
     PodAntiAffinity, PodSpec, Probe, Secret, SecretVolumeSource, SecurityContext, TCPSocketAction,
 };
 use stackable_operator::k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+use stackable_operator::kube::core::ErrorResponse;
 use stackable_operator::kube::ResourceExt;
 use stackable_operator::role_utils::RoleGroupRef;
 use stackable_operator::{
@@ -34,6 +39,7 @@ use stackable_operator::{
         },
         apimachinery::pkg::{api::resource::Quantity, apis::meta::v1::LabelSelector},
     },
+    kube,
     kube::{
         api::ObjectMeta,
         runtime::controller::{Context, ReconcilerAction},
@@ -145,6 +151,12 @@ pub enum Error {
         name: String,
         namespace: String,
     },
+    #[snafu(display("Failed to find statefulset [{}/{}]", name, namespace))]
+    MissingStatefulSet {
+        source: stackable_operator::error::Error,
+        name: String,
+        namespace: String,
+    },
     #[snafu(display("Failed to materialize authentication config element from k8s"))]
     MaterializeError {
         source: stackable_nifi_crd::authentication::Error,
@@ -154,6 +166,8 @@ pub enum Error {
         message
     ))]
     SensitiveKeySecretError { message: String },
+    #[snafu(display("error handling decommissioning of nodes"))]
+    Decommission { source: decommission::Error },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -167,6 +181,33 @@ pub async fn reconcile_nifi(nifi: NifiCluster, ctx: Context<Ctx>) -> Result<Reco
         .namespace
         .clone()
         .unwrap_or("default".to_string());
+
+    // Check if there are currently nodes being decommissioned
+    if is_decommissioning(&nifi) {
+        // Decommissioning is still ongoing, we abort here, as there is a high
+        // likelihood that changes made would trigger a restart of the service and
+        // disrupt offloading of flowfiles
+        return Ok(ReconcilerAction {
+            requeue_after: Some(Duration::from_secs(30)),
+        });
+    }
+
+    // Check if we are shrinking the cluster with the change that triggered this reconciliation -
+    // for this we need to iterate over the rolegroups and compare the target number of replicas
+    // with the current number of replicas configured in the statefulset
+    match is_shrinking(client, &nifi)
+        .await
+        .with_context(|| Decommission {})?
+    {
+        None => {}
+        Some(nodes_to_decommission) if !nodes_to_decommission.is_empty() => {}
+        Some(nodes_to_decommission) => {
+            decommission_nodes(nodes_to_decommission).await.with_context(|| Decommission {})?;
+            return Ok(ReconcilerAction {
+                requeue_after: Some(Duration::from_secs(10)),
+            });
+        }
+    };
 
     // Zookeeper reference
     let zk_name = nifi.spec.zookeeper_reference.name.clone();
@@ -816,6 +857,67 @@ fn build_node_rolegroup_statefulset(
     })
 }
 
+async fn check_or_generate_admin_credentials(
+    client: &Client,
+    nifi: &NifiCluster,
+) -> Result<bool, Error> {
+    let auth = &nifi.spec.authentication_config.method;
+    let spec_namespace = nifi
+        .metadata
+        .namespace
+        .as_ref()
+        .with_context(|| ObjectHasNoNamespace)?;
+
+    match auth {
+        NifiAuthenticationMethod::SingleUser {
+            admin_credentials_secret,
+        } => {
+            let secret_name = admin_credentials_secret
+                .name
+                .as_ref()
+                .with_context(|| ObjectHasNoName)?;
+            let secret_namespace = admin_credentials_secret
+                .namespace
+                .as_ref()
+                .unwrap_or(spec_namespace);
+
+            match client
+                .exists::<Secret>(&secret_name, Some(&secret_namespace))
+                .await
+                .with_context(|| SensitiveKeySecret {})?
+            {
+                true =>
+                // TODO: Check if proper keys exist and fill these if not
+                {
+                    Ok(false)
+                }
+
+                false => {
+                    // Secret is not present, generate and create
+                    tracing::info!("Secret for single user admin credentials not found, generating new credentials");
+                    let mut secret_data = BTreeMap::new();
+                    secret_data.insert("username".to_string(), "admin".to_string());
+                    secret_data.insert("password".to_string(), generate_password(15));
+                    let new_secret = Secret {
+                        metadata: ObjectMetaBuilder::new()
+                            .namespace(secret_namespace)
+                            .name(secret_name)
+                            .build(),
+                        string_data: Some(secret_data),
+                        ..Secret::default()
+                    };
+                    client
+                        .create(&new_secret)
+                        .await
+                        .with_context(|| SensitiveKeySecret {})?;
+                    Ok(true)
+                }
+            }
+        }
+        _ => Ok(false),
+    }
+}
+
 async fn check_or_generate_sensitive_key(
     client: &Client,
     nifi: &NifiCluster,
@@ -832,17 +934,13 @@ async fn check_or_generate_sensitive_key(
         .await
         .with_context(|| SensitiveKeySecret {})?
     {
+        // TODO: Check if the secret contains the required key, if not generate password and add it
+        //      with that key
         true => Ok(false),
         false => {
             tracing::info!("No existing sensitive properties key found, generating new one");
-            let password: String = rand::thread_rng()
-                .sample_iter(&Alphanumeric)
-                .take(15)
-                .map(char::from)
-                .collect();
-
             let mut secret_data = BTreeMap::new();
-            secret_data.insert("nifiSensitivePropsKey".to_string(), password);
+            secret_data.insert("nifiSensitivePropsKey".to_string(), generate_password(15));
 
             let new_secret = Secret {
                 metadata: ObjectMetaBuilder::new()
@@ -859,6 +957,14 @@ async fn check_or_generate_sensitive_key(
             Ok(true)
         }
     }
+}
+
+fn generate_password(length: usize) -> String {
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(length)
+        .map(char::from)
+        .collect()
 }
 
 fn get_stackable_secret_volume_attributes() -> BTreeMap<String, String> {

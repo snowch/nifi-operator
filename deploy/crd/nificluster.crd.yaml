@@ -173,7 +173,6 @@ spec:
                   properties:
                     algorithm:
                       enum:
-                        - default
                         - nifiArgon2AesGcm128
                         - nifiArgon2AesGcm256
                         - nifiBcryptAesGcm128
@@ -218,6 +217,12 @@ spec:
               type: object
             status:
               nullable: true
+              properties:
+                decommissioning_nodes:
+                  items:
+                    type: string
+                  nullable: true
+                  type: array
               type: object
           required:
             - spec

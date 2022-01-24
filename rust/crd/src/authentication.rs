@@ -4,7 +4,6 @@ use stackable_operator::client::Client;
 use stackable_operator::k8s_openapi::api::core::v1::{Secret, SecretReference};
 use stackable_operator::schemars::{self, JsonSchema};
 use std::string::FromUtf8Error;
-use xml::escape::escape_str_attribute;
 
 #[derive(Snafu, Debug)]
 #[allow(clippy::enum_variant_names)]
@@ -136,21 +135,21 @@ pub async fn get_login_identity_provider_xml(
                     .unwrap_or_else(|| "".to_string()),
             })?;
 
-            Ok(build_single_user_config(&user_name, &password))
+            Ok(build_single_user_config())
         }
     }
 }
 
-fn build_single_user_config(username: &str, password_hash: &str) -> String {
+fn build_single_user_config() -> String {
     format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>
      <loginIdentityProviders>
         <provider>
             <identifier>single-user-provider</identifier>
             <class>org.apache.nifi.authentication.single.user.SingleUserLoginIdentityProvider</class>
-            <property name=\"Username\">{}</property>
-            <property name=\"Password\">{}</property>
+            <property name=\"Username\">username</property>
+            <property name=\"Password\">password</property>
         </provider>
-     </loginIdentityProviders>", escape_str_attribute(username), escape_str_attribute(password_hash))
+     </loginIdentityProviders>")
 }
 
 /*

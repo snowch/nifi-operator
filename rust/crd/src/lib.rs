@@ -67,8 +67,6 @@ pub struct NifiSensitivePropertiesConfig {
 #[derive(strum::Display, Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum NifiSensitiveKeyAlgorithm {
-    #[strum(serialize = "")]
-    Default,
     #[strum(serialize = "NIFI_ARGON2_AES_GCM_128")]
     NifiArgon2AesGcm128,
     #[strum(serialize = "NIFI_ARGON2_AES_GCM_256")]
@@ -85,6 +83,12 @@ pub enum NifiSensitiveKeyAlgorithm {
     NifiScryptAesGcm128,
     #[strum(serialize = "NIFI_SCRYPT_AES_GCM_256")]
     NifiScryptAesGcm256,
+}
+
+impl Default for NifiSensitiveKeyAlgorithm {
+    fn default() -> Self {
+        NifiSensitiveKeyAlgorithm::NifiArgon2AesGcm256
+    }
 }
 
 #[derive(strum::Display, Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
@@ -118,7 +122,9 @@ pub enum NifiRole {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
-pub struct NifiStatus {}
+pub struct NifiStatus {
+    pub decommissioning_nodes: Option<Vec<String>>,
+}
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
