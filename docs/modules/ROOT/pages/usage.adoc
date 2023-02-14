@@ -4,7 +4,7 @@
 
 Apache Nifi requires Apache ZooKeeper to run. This page assumes you already installed the Stackable operators for both of these products.
 
-For details regarding the https://github.com/stackabletech/zookeeper-operator[Stackable Operator for Apache ZooKeeper] see the xref:zookeeper::index.adoc[documentation].
+For details regarding the https://github.com/stackabletech/zookeeper-operator[Stackable Operator for Apache ZooKeeper] see the xref:0.12@zookeeper::index.adoc[documentation].
 
 == Create an Apache Nifi cluster
 
@@ -40,7 +40,7 @@ spec:
 ----
 <1> Name of the Nifi cluster.
 <2> Version of the Apache Nifi container image to use. This contains the Nifi version (`1.16.3`) as well as Stackable image version (`stackable0.1.0`). For a list of available versions please check our https://repo.stackable.tech/#browse/browse:docker:v2%2Fstackable%2Fnifi%2Ftags[image registry].
-<3> A reference to a `ZNode` resource. This resource must exist and cannot be reused across Nifi clusters. For details on how to create `ZNode` resources see xref:zookeeper::znodes.adoc[this page].
+<3> A reference to a `ZNode` resource. This resource must exist and cannot be reused across Nifi clusters. For details on how to create `ZNode` resources see xref:0.12@zookeeper::znodes.adoc[this page].
 <4> Administator credentials for logging into the Nifi web interface. This is the name of a `Secret` resource with two fields: `username` and `password`. This `Secret` must exist but it's entries can be populated by the operator when `autoGenerate` is `true`.
 
 == Authentication
@@ -54,8 +54,8 @@ Further users can not be added.
 
 === LDAP
 NiFI supports authentication of users against an LDAP server.
-Have a look at https://github.com/stackabletech/nifi-operator/tree/main/tests/templates/kuttl/ldap[the LDAP test] and the general xref:commons-operator::authenticationclass.adoc[Stackable Authentication] documentation on how to set it up.
-In general, it requires you to specify a xref:commons-operator::authenticationclass.adoc[`AuthenticationClass`] which is used to authenticate the users.
+Have a look at https://github.com/stackabletech/nifi-operator/tree/main/tests/templates/kuttl/ldap[the LDAP test] and the general xref:0.4@commons-operator::authenticationclass.adoc[Stackable Authentication] documentation on how to set it up.
+In general, it requires you to specify a xref:0.4@commons-operator::authenticationclass.adoc[`AuthenticationClass`] which is used to authenticate the users.
 Here you have an example usage
 
 [source,yaml]
@@ -159,7 +159,7 @@ This does not affect the stackable image version, this can be changed in a rolli
 == Monitoring
 
 The managed NiFi cluster is automatically configured to export Prometheus metrics. See
-xref:home:operators:monitoring.adoc[] for more details.
+xref:22.11@home:operators:monitoring.adoc[] for more details.
 
 == Configuration & Environment Overrides
 
