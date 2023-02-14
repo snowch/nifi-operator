@@ -84,8 +84,8 @@ Further users can not be added.
 
 === LDAP
 NiFI supports authentication of users against an LDAP server.
-Have a look at https://github.com/stackabletech/nifi-operator/tree/main/tests/templates/kuttl/ldap[the LDAP test] and the general xref:commons-operator::authenticationclass.adoc[Stackable Authentication] documentation on how to set it up.
-In general, it requires you to specify a xref:commons-operator::authenticationclass.adoc[`AuthenticationClass`] which is used to authenticate the users.
+Have a look at https://github.com/stackabletech/nifi-operator/tree/main/tests/templates/kuttl/ldap[the LDAP test] and the general xref:0.3@commons-operator::authenticationclass.adoc[Stackable Authentication] documentation on how to set it up.
+In general, it requires you to specify a xref:0.3@commons-operator::authenticationclass.adoc[`AuthenticationClass`] which is used to authenticate the users.
 Here you have an example usage
 
 [source,yaml]
@@ -156,7 +156,7 @@ The changes made will be written to local files which are *not* persistent.
 == Monitoring
 
 The managed NiFi cluster is automatically configured to export Prometheus metrics. See
-xref:home:operators:monitoring.adoc[] for more details.
+xref:22.09@home:operators:monitoring.adoc[] for more details.
 
 == Configuration & Environment Overrides
 
