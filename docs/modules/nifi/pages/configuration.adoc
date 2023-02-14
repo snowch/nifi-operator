@@ -1,7 +1,0 @@
-= Configuration
-
-include::commandline_args.adoc[]
-
-include::partial$env_var_args.adoc[]
-
-include::partial$config_properties.adoc[]
