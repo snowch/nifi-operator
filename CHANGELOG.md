@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+TODO: We have removed support for nifi.security.allow.anonymous.authentication.
+
 ## [23.7.0] - 2023-07-14
 
 ### Added

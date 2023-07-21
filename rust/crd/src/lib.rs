@@ -1,10 +1,10 @@
 pub mod affinity;
 pub mod authentication;
 
-use crate::authentication::NifiAuthenticationConfig;
 use std::collections::BTreeMap;
 
 use affinity::get_affinity;
+use authentication::NifiAuthenticationClassRef;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
@@ -99,8 +99,9 @@ pub struct NifiSpec {
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NifiClusterConfig {
-    /// A reference to a Secret containing username/password for the initial admin user
-    pub authentication: NifiAuthenticationConfig,
+    /// Authentication options for NiFi (required)
+    // We don't add `#[serde(default)]` here, as we require authentication
+    pub authentication: Vec<NifiAuthenticationClassRef>,
     /// Configuration options for how NiFi encrypts sensitive properties on disk
     pub sensitive_properties: NifiSensitivePropertiesConfig,
     /// Name of the Vector aggregator discovery ConfigMap.
@@ -198,7 +199,7 @@ impl Default for StoreType {
     }
 }
 
-#[derive(strum::Display)]
+#[derive(Clone, Debug, strum::Display, Eq, Hash, PartialEq)]
 #[strum(serialize_all = "camelCase")]
 pub enum NifiRole {
     #[strum(serialize = "node")]

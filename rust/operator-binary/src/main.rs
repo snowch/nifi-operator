@@ -1,3 +1,8 @@
+mod authentication;
+mod config;
+mod controller;
+mod product_logging;
+
 use std::sync::Arc;
 
 use clap::{crate_description, crate_version, Parser};
@@ -17,16 +22,9 @@ use stackable_operator::{
     CustomResourceExt,
 };
 
-use stackable_nifi_crd::{
-    authentication::{NifiAuthenticationConfig, NifiAuthenticationMethod},
-    NifiCluster,
-};
+use stackable_nifi_crd::NifiCluster;
 
 use crate::controller::CONTROLLER_NAME;
-
-mod config;
-mod controller;
-mod product_logging;
 
 const OPERATOR_NAME: &str = "nifi.stackable.tech";
 
@@ -79,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
                 watcher::Config::default(),
             );
 
-            let nifi_store_1 = nifi_controller.store();
+            let cluster_store = nifi_controller.store();
 
             nifi_controller
                 .owns(
@@ -99,16 +97,13 @@ async fn main() -> anyhow::Result<()> {
                     client.get_api::<AuthenticationClass>(&()),
                     watcher::Config::default(),
                     move |authentication_class| {
-                        nifi_store_1
+                        cluster_store
                             .state()
                             .into_iter()
                             .filter(move |nifi: &Arc<NifiCluster>| {
-                                references_authentication_class(
-                                    &nifi.spec.cluster_config.authentication,
-                                    &authentication_class,
-                                )
+                                references_authentication_class(&nifi, &authentication_class)
                             })
-                            .map(|superset| ObjectRef::from_obj(&*superset))
+                            .map(|nifi| ObjectRef::from_obj(&*nifi))
                     },
                 )
                 .run(
@@ -135,13 +130,13 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn references_authentication_class(
-    authentication_config: &NifiAuthenticationConfig,
+    nifi: &NifiCluster,
     authentication_class: &AuthenticationClass,
 ) -> bool {
-    match &authentication_config.method {
-        NifiAuthenticationMethod::AuthenticationClass(authentication_class_in_nifi) => {
-            authentication_class_in_nifi == &authentication_class.name_any()
-        }
-        _ => false,
-    }
+    let authentication_class_name = authentication_class.name_any();
+    nifi.spec
+        .cluster_config
+        .authentication
+        .iter()
+        .any(|a| a.authentication_class == authentication_class_name)
 }

@@ -19,6 +19,8 @@ use std::{
 };
 use strum::{Display, EnumIter};
 
+use crate::authentication::NifiAuthenticationConfig;
+
 pub const NIFI_BOOTSTRAP_CONF: &str = "bootstrap.conf";
 pub const NIFI_PROPERTIES: &str = "nifi.properties";
 pub const NIFI_STATE_MANAGEMENT_XML: &str = "state-management.xml";
@@ -159,7 +161,9 @@ pub fn build_bootstrap_conf(
 /// Create the NiFi nifi.properties
 pub fn build_nifi_properties(
     spec: &NifiSpec,
+    role: &NifiRole,
     resource_config: &Resources<NifiStorageConfig>,
+    authentication_config: &NifiAuthenticationConfig,
     proxy_hosts: &str,
     overrides: BTreeMap<String, String>,
 ) -> Result<String, Error> {
@@ -530,13 +534,6 @@ pub fn build_nifi_properties(
         "authorizer".to_string(),
     );
     properties.insert(
-        "nifi.security.allow.anonymous.authentication".to_string(),
-        spec.cluster_config
-            .authentication
-            .allow_anonymous()
-            .to_string(),
-    );
-    properties.insert(
         "nifi.cluster.protocol.is.secure".to_string(),
         "true".to_string(),
     );
@@ -565,6 +562,8 @@ pub fn build_nifi_properties(
     );
     // this will be replaced via a container command script
     properties.insert("nifi.zookeeper.root.node".to_string(), "xxxxxx".to_string());
+
+    properties.extend(authentication_config.config_properties(role));
 
     // override with config overrides
     properties.extend(overrides);
