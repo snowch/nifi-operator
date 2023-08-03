@@ -259,8 +259,10 @@ pub async fn reconcile_nifi(nifi: Arc<NifiCluster>, ctx: Arc<Ctx>) -> Result<Act
         .with_context(|| ObjectHasNoNamespaceSnafu {})?;
     let nifi_role = NifiRole::Node;
 
-    let resolved_product_image: ResolvedProductImage =
-        nifi.spec.image.resolve(DOCKER_IMAGE_BASE_NAME);
+    let resolved_product_image: ResolvedProductImage = nifi
+        .spec
+        .image
+        .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::CARGO_PKG_VERSION);
 
     let resolved_authentication_classes =
         resolve_authentication_classes(client, &nifi.spec.cluster_config.authentication)
