@@ -10,7 +10,13 @@ TODO: We have removed support for nifi.security.allow.anonymous.authentication.
 
 - Default stackableVersion to operator version. It is recommended to remove `spec.image.stackableVersion` from your custom resources ([#493]).
 
+### Changed
+
+- `vector` `0.26.0` -> `0.31.0` ([#494]).
+- `operator-rs` `0.44.0` -> `0.45.1` ([#493]).
+
 [#493]: https://github.com/stackabletech/nifi-operator/pull/493
+[#494]: https://github.com/stackabletech/nifi-operator/pull/494
 
 ## [23.7.0] - 2023-07-14
 
