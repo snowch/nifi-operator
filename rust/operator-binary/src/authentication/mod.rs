@@ -354,19 +354,13 @@ impl NifiAuthenticationTypes {
         // SAFETY: At this point `auth_classes` must have a single element
         let auth_class = auth_classes.first().unwrap();
         let auth_class_name = auth_class.name_any();
-        authentication_types.push(match auth_class.spec.provider {
+        authentication_types.push(match &auth_class.spec.provider {
             AuthenticationClassProvider::Ldap(ldap) => {
-                NifiAuthenticationType::Ldap(NifiLdapAuthenticator {
-                    name: auth_class_name,
-                    ldap,
-                })
+                NifiAuthenticationType::Ldap(NifiLdapAuthenticator::new(&auth_class_name, ldap))
             }
-            AuthenticationClassProvider::Static(static_) => {
-                NifiAuthenticationType::SingleUser(NifiSingleUserAuthenticator {
-                    name: auth_class_name,
-                    static_,
-                })
-            }
+            AuthenticationClassProvider::Static(static_) => NifiAuthenticationType::SingleUser(
+                NifiSingleUserAuthenticator::new(&auth_class_name, static_),
+            ),
             _ => AuthenticationClassProviderNotSupportedSnafu {
                 authentication_class_provider: auth_class.spec.provider.to_string(),
                 authentication_class: ObjectRef::<AuthenticationClass>::from_obj(&auth_class),

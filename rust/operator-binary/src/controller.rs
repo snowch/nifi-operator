@@ -264,14 +264,15 @@ pub async fn reconcile_nifi(nifi: Arc<NifiCluster>, ctx: Arc<Ctx>) -> Result<Act
         .image
         .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::CARGO_PKG_VERSION);
 
-    let resolved_authentication_classes =
-        resolve_authentication_classes(client, &nifi.spec.cluster_config.authentication)
-            .await
-            .context(AuthenticationClassRetrievalSnafu)?;
     let authentication_config = NifiAuthenticationConfig::new(
         &resolved_product_image,
-        NifiAuthenticationTypes::try_from(&nifi, resolved_authentication_classes)
-            .context(UnsupportedAuthenticationConfigSnafu)?,
+        NifiAuthenticationTypes::try_from(
+            &nifi,
+            resolve_authentication_classes(client, &nifi.spec.cluster_config.authentication)
+                .await
+                .context(AuthenticationClassRetrievalSnafu)?,
+        )
+        .context(UnsupportedAuthenticationConfigSnafu)?,
     )
     .context(InvalidAuthenticationConfigSnafu)?;
 
@@ -1192,94 +1193,95 @@ fn build_reporting_task_job(
     authentication_config: &NifiAuthenticationConfig,
     sa_name: &str,
 ) -> Result<Job> {
-    let nifi_name = nifi.name_any();
-    let nifi_namespace: &str = &nifi.namespace().context(ObjectHasNoNamespaceSnafu)?;
-    let product_version = &resolved_product_image.product_version;
-    let nifi_connect_url =
-        format!("https://{nifi_name}.{nifi_namespace}.svc.cluster.local:{HTTPS_PORT}/nifi-api",);
-
-    let (admin_username_file, admin_password_file) =
-        resolved_auth_conf.get_user_and_password_file_paths();
-
-    let args = vec![
-        "/stackable/python/create_nifi_reporting_task.py".to_string(),
-        format!("-n {nifi_connect_url}"),
-        // In case of the username being simple (e.g. admin) just use it as is
-        // If the username is a bind dn (e.g. cn=integrationtest,ou=users,dc=example,dc=org) we have to extract the cn/dn/uid (in this case integrationtest)
-        format!(
-            "-u \"$(cat {admin_username_file} | grep -oP '((cn|dn|uid)=\\K[^,]+|.*)' | head -n 1)\""
-        ),
-        format!("-p \"$(cat {admin_password_file})\""),
-        format!("-v {product_version}"),
-        format!("-m {METRICS_PORT}"),
-        format!("-c {KEYSTORE_REPORTING_TASK_MOUNT}/ca.crt"),
-    ];
-    let mut cb = ContainerBuilder::new("create-reporting-task").with_context(|_| {
-        IllegalContainerNameSnafu {
-            container_name: "create-reporting-task".to_string(),
-        }
-    })?;
-    cb.image_from_product_image(resolved_product_image)
-        .command(vec!["sh".to_string(), "-c".to_string()])
-        .args(vec![args.join(" ")])
-        // The VolumeMount for the secret operator key store certificates
-        .add_volume_mount(KEYSTORE_VOLUME_NAME, KEYSTORE_REPORTING_TASK_MOUNT)
-        .resources(
-            ResourceRequirementsBuilder::new()
-                .with_cpu_request("100m")
-                .with_cpu_limit("400m")
-                .with_memory_request("512Mi")
-                .with_memory_limit("512Mi")
-                .build(),
-        );
-
-    let job_name = format!(
-        "{}-create-reporting-task-{}",
-        nifi.name_any(),
-        product_version.replace('.', "-")
-    );
-
-    let mut pb = PodBuilder::new();
-    resolved_auth_conf.add_volumes_and_mounts(&mut pb, vec![&mut cb]);
-
-    let pod = pb
-        .metadata(
-            ObjectMetaBuilder::new()
-                .name(job_name.clone())
-                .namespace_opt(nifi.namespace())
-                .build(),
-        )
-        .image_pull_secrets_from_product_image(resolved_product_image)
-        .restart_policy("OnFailure")
-        .service_account_name(sa_name)
-        .security_context(
-            PodSecurityContextBuilder::new()
-                .run_as_user(NIFI_UID)
-                .run_as_group(0)
-                .fs_group(1000)
-                .build(),
-        )
-        .add_container(cb.build())
-        .add_volume(build_keystore_volume(KEYSTORE_VOLUME_NAME, &nifi_name))
-        .build_template();
-
-    let job = Job {
-        metadata: ObjectMetaBuilder::new()
-            .name(job_name)
-            .namespace_opt(nifi.namespace())
-            .ownerreference_from_resource(nifi, None, Some(true))
-            .context(ObjectMissingMetadataForOwnerRefSnafu)?
-            .build(),
-        spec: Some(JobSpec {
-            backoff_limit: Some(100),
-            ttl_seconds_after_finished: Some(120),
-            template: pod,
-            ..JobSpec::default()
-        }),
-        ..Job::default()
-    };
-
-    Ok(job)
+    // let nifi_name = nifi.name_any();
+    // let nifi_namespace: &str = &nifi.namespace().context(ObjectHasNoNamespaceSnafu)?;
+    // let product_version = &resolved_product_image.product_version;
+    // let nifi_connect_url =
+    //     format!("https://{nifi_name}.{nifi_namespace}.svc.cluster.local:{HTTPS_PORT}/nifi-api",);
+    //
+    // let (admin_username_file, admin_password_file) =
+    //     resolved_auth_conf.get_user_and_password_file_paths();
+    //
+    // let args = vec![
+    //     "/stackable/python/create_nifi_reporting_task.py".to_string(),
+    //     format!("-n {nifi_connect_url}"),
+    //     // In case of the username being simple (e.g. admin) just use it as is
+    //     // If the username is a bind dn (e.g. cn=integrationtest,ou=users,dc=example,dc=org) we have to extract the cn/dn/uid (in this case integrationtest)
+    //     format!(
+    //         "-u \"$(cat {admin_username_file} | grep -oP '((cn|dn|uid)=\\K[^,]+|.*)' | head -n 1)\""
+    //     ),
+    //     format!("-p \"$(cat {admin_password_file})\""),
+    //     format!("-v {product_version}"),
+    //     format!("-m {METRICS_PORT}"),
+    //     format!("-c {KEYSTORE_REPORTING_TASK_MOUNT}/ca.crt"),
+    // ];
+    // let mut cb = ContainerBuilder::new("create-reporting-task").with_context(|_| {
+    //     IllegalContainerNameSnafu {
+    //         container_name: "create-reporting-task".to_string(),
+    //     }
+    // })?;
+    // cb.image_from_product_image(resolved_product_image)
+    //     .command(vec!["sh".to_string(), "-c".to_string()])
+    //     .args(vec![args.join(" ")])
+    //     // The VolumeMount for the secret operator key store certificates
+    //     .add_volume_mount(KEYSTORE_VOLUME_NAME, KEYSTORE_REPORTING_TASK_MOUNT)
+    //     .resources(
+    //         ResourceRequirementsBuilder::new()
+    //             .with_cpu_request("100m")
+    //             .with_cpu_limit("400m")
+    //             .with_memory_request("512Mi")
+    //             .with_memory_limit("512Mi")
+    //             .build(),
+    //     );
+    //
+    // let job_name = format!(
+    //     "{}-create-reporting-task-{}",
+    //     nifi.name_any(),
+    //     product_version.replace('.', "-")
+    // );
+    //
+    // let mut pb = PodBuilder::new();
+    // resolved_auth_conf.add_volumes_and_mounts(&mut pb, vec![&mut cb]);
+    //
+    // let pod = pb
+    //     .metadata(
+    //         ObjectMetaBuilder::new()
+    //             .name(job_name.clone())
+    //             .namespace_opt(nifi.namespace())
+    //             .build(),
+    //     )
+    //     .image_pull_secrets_from_product_image(resolved_product_image)
+    //     .restart_policy("OnFailure")
+    //     .service_account_name(sa_name)
+    //     .security_context(
+    //         PodSecurityContextBuilder::new()
+    //             .run_as_user(NIFI_UID)
+    //             .run_as_group(0)
+    //             .fs_group(1000)
+    //             .build(),
+    //     )
+    //     .add_container(cb.build())
+    //     .add_volume(build_keystore_volume(KEYSTORE_VOLUME_NAME, &nifi_name))
+    //     .build_template();
+    //
+    // let job = Job {
+    //     metadata: ObjectMetaBuilder::new()
+    //         .name(job_name)
+    //         .namespace_opt(nifi.namespace())
+    //         .ownerreference_from_resource(nifi, None, Some(true))
+    //         .context(ObjectMissingMetadataForOwnerRefSnafu)?
+    //         .build(),
+    //     spec: Some(JobSpec {
+    //         backoff_limit: Some(100),
+    //         ttl_seconds_after_finished: Some(120),
+    //         template: pod,
+    //         ..JobSpec::default()
+    //     }),
+    //     ..Job::default()
+    // };
+    //
+    // Ok(job)
+    Ok(Job::default())
 }
 
 async fn check_or_generate_sensitive_key(

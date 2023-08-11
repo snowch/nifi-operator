@@ -42,14 +42,14 @@ pub enum Error {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub fn create_authenticator(nifi: &NifiCluster) -> NifiAuthenticationType {
-    NifiAuthenticationType::SingleUser(NifiSingleUserAuthenticator {
-        name: "create-reporting-task-user".to_string(),
-        static_: StaticAuthenticationProvider {
+    NifiAuthenticationType::SingleUser(NifiSingleUserAuthenticator::new(
+        "create-reporting-task-user",
+        &StaticAuthenticationProvider {
             user_credentials_secret: UserCredentialsSecretRef {
                 name: build_secret_name(nifi),
             },
         },
-    })
+    ))
 }
 
 pub async fn ensure_credentials_secret(nifi: &NifiCluster, client: &Client) -> Result<()> {

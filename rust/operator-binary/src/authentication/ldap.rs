@@ -41,6 +41,13 @@ pub struct NifiLdapAuthenticator {
 }
 
 impl NifiLdapAuthenticator {
+    pub fn new(name: &str, provider: &LdapAuthenticationProvider) -> Self {
+        Self {
+            name: name.to_string(),
+            ldap: provider.clone(),
+        }
+    }
+
     pub fn authentication_config(
         &self,
         resolved_product_image: &ResolvedProductImage,

@@ -18,6 +18,13 @@ pub struct NifiSingleUserAuthenticator {
 }
 
 impl NifiSingleUserAuthenticator {
+    pub fn new(name: &str, provider: &StaticAuthenticationProvider) -> Self {
+        Self {
+            name: name.to_string(),
+            static_: provider.clone(),
+        }
+    }
+
     pub fn authentication_config(
         &self,
         resolved_product_image: &ResolvedProductImage,
