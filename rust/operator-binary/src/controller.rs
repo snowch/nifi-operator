@@ -64,7 +64,7 @@ use stackable_nifi_crd::{
 };
 
 use crate::{
-    authentication::NifiAuthenticationTypes,
+    authentication::NifiAuthenticationType,
     product_logging::{extend_role_group_config_map, resolve_vector_aggregator_address},
 };
 use crate::{
@@ -252,12 +252,11 @@ pub enum VersionChangeState {
 pub async fn reconcile_nifi(nifi: Arc<NifiCluster>, ctx: Arc<Ctx>) -> Result<Action> {
     tracing::info!("Starting reconcile");
     let client = &ctx.client;
-    let namespace = &nifi
+    let namespace = nifi
         .metadata
         .namespace
-        .clone()
+        .as_ref()
         .with_context(|| ObjectHasNoNamespaceSnafu {})?;
-    let nifi_role = NifiRole::Node;
 
     let resolved_product_image: ResolvedProductImage = nifi
         .spec
@@ -266,8 +265,7 @@ pub async fn reconcile_nifi(nifi: Arc<NifiCluster>, ctx: Arc<Ctx>) -> Result<Act
 
     let authentication_config = NifiAuthenticationConfig::new(
         &resolved_product_image,
-        NifiAuthenticationTypes::try_from(
-            &nifi,
+        NifiAuthenticationType::try_from(
             resolve_authentication_classes(client, &nifi.spec.cluster_config.authentication)
                 .await
                 .context(AuthenticationClassRetrievalSnafu)?,
@@ -405,6 +403,7 @@ pub async fn reconcile_nifi(nifi: Arc<NifiCluster>, ctx: Arc<Ctx>) -> Result<Act
         .context(ApplyRoleBindingSnafu)?;
 
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
+    let nifi_role = NifiRole::Node;
 
     for (rolegroup_name, rolegroup_config) in nifi_node_config.iter() {
         let rg_span = tracing::info_span!("rolegroup_span", rolegroup = rolegroup_name.as_str());

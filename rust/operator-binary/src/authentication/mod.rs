@@ -82,19 +82,17 @@ pub struct NifiAuthenticationConfig {
 impl NifiAuthenticationConfig {
     pub fn new(
         resolved_product_image: &ResolvedProductImage,
-        nifi_auth: NifiAuthenticationTypes,
+        auth_type: NifiAuthenticationType,
     ) -> Result<Self, Error> {
         let mut authentication_config = NifiAuthenticationConfig::default();
 
-        for auth_type in &nifi_auth.authentication_types {
-            match auth_type {
-                NifiAuthenticationType::SingleUser(single_user) => authentication_config
-                    .extend(single_user.authentication_config(resolved_product_image)),
-                NifiAuthenticationType::Ldap(ldap) => authentication_config.extend(
-                    ldap.authentication_config(resolved_product_image)
-                        .context(InvalidLdapAuthenticationConfigSnafu)?,
-                ),
-            }
+        match auth_type {
+            NifiAuthenticationType::SingleUser(single_user) => authentication_config
+                .extend(single_user.authentication_config(resolved_product_image)),
+            NifiAuthenticationType::Ldap(ldap) => authentication_config.extend(
+                ldap.authentication_config(resolved_product_image)
+                    .context(InvalidLdapAuthenticationConfigSnafu)?,
+            ),
         }
 
         trace!("Final Nifi authentication config: {authentication_config:?}",);
@@ -329,32 +327,18 @@ pub enum NifiAuthenticationType {
     Ldap(NifiLdapAuthenticator),
 }
 
-/// Helper for AuthenticationClass conversion.
-#[derive(Clone, Debug, Default)]
-pub struct NifiAuthenticationTypes {
-    // All authentication classes sorted into the Nifi interpretation
-    authentication_types: Vec<NifiAuthenticationType>,
-}
-
-impl NifiAuthenticationTypes {
-    pub fn try_from(
-        nifi: &NifiCluster,
-        auth_classes: Vec<AuthenticationClass>,
-    ) -> std::result::Result<Self, Error> {
-        let mut authentication_types = Vec::new();
+impl NifiAuthenticationType {
+    pub fn try_from(auth_classes: Vec<AuthenticationClass>) -> std::result::Result<Self, Error> {
         match auth_classes.len() {
             0 => NoAuthenticationNotSupportedSnafu.fail()?,
             1 => {}
             _ => MultipleAuthenticationClassesNotSupportedSnafu.fail()?,
         }
 
-        // We always add a SingleUser authenticator for the reporting task
-        authentication_types.push(reporting_task_user::create_authenticator(nifi));
-
         // SAFETY: At this point `auth_classes` must have a single element
         let auth_class = auth_classes.first().unwrap();
         let auth_class_name = auth_class.name_any();
-        authentication_types.push(match &auth_class.spec.provider {
+        Ok(match &auth_class.spec.provider {
             AuthenticationClassProvider::Ldap(ldap) => {
                 NifiAuthenticationType::Ldap(NifiLdapAuthenticator::new(&auth_class_name, ldap))
             }
@@ -366,10 +350,6 @@ impl NifiAuthenticationTypes {
                 authentication_class: ObjectRef::<AuthenticationClass>::from_obj(&auth_class),
             }
             .fail()?,
-        });
-
-        Ok(NifiAuthenticationTypes {
-            authentication_types,
         })
     }
 }
