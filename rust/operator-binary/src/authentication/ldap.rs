@@ -48,10 +48,7 @@ impl NifiLdapAuthenticator {
         }
     }
 
-    pub fn authentication_config(
-        &self,
-        resolved_product_image: &ResolvedProductImage,
-    ) -> Result<NifiAuthenticationConfig, Error> {
+    pub fn authentication_config(&self) -> Result<NifiAuthenticationConfig, Error> {
         todo!()
     }
 }

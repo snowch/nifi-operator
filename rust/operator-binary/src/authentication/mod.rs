@@ -1,7 +1,7 @@
 //! This module contains all resources required for Nifi authentication.
 //!
 //! Nifi does not support authentication of multiple users with a single login provider, it only has `SingleUserLoginIdentityProvider`,
-//! which can authenticate a single user. However, you can chain multiple LoginIdentityProviders.
+//! which can authenticate a single user.
 //! When implementing the AuthClass `static` provider, we can choose to implement it in the following ways:
 //! 1. Introduce new AuthClass `staticSingleUser` similar to `static`, but only with single user allowed in the referenced Secret
 //! 2. Use `static`, assert on startup that Secret only contains a single user, use that username and password
@@ -17,8 +17,11 @@ pub(crate) mod ldap;
 pub(crate) mod reporting_task_user;
 pub(crate) mod single_user;
 
+use indoc::indoc;
+use serde_json::to_string;
 use snafu::{ResultExt, Snafu};
 use stackable_nifi_crd::{NifiCluster, NifiRole};
+use stackable_operator::k8s_openapi::api::core::v1::EnvVar;
 use stackable_operator::{
     builder::{ContainerBuilder, PodBuilder},
     commons::{
@@ -36,6 +39,24 @@ use std::collections::{BTreeMap, HashMap};
 use tracing::trace;
 
 use self::{ldap::NifiLdapAuthenticator, single_user::NifiSingleUserAuthenticator};
+
+const LOGIN_IDENTITY_PROVIDERS_XML_FILE_NAME: &str = "login-identity-providers.xml";
+const LOGIN_IDENTITY_PROVIDER_XML_START: &str = indoc! {r#"
+            <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+            <loginIdentityProviders>
+        "#};
+const LOGIN_IDENTITY_PROVIDER_XML_END: &str = indoc! {r#"
+            </loginIdentityProviders>
+        "#};
+
+const AUTHORIZERS_XML_FILE_NAME: &str = "authorizers.xml";
+const AUTHORIZERS_XML_START: &str = indoc! {r#"
+            <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+            <authorizers>
+        "#};
+const AUTHORIZERS_XML_END: &str = indoc! {r#"
+            </authorizers>
+        "#};
 
 #[derive(Snafu, Debug)]
 pub enum Error {
@@ -61,13 +82,15 @@ pub enum Error {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// This is the final product after iterating through all authenticators.
-/// Contains all relevant information about config files, volumes etc. to enable authentication.
+/// Contains all relevant information about config files, extra container args etc. to enable authentication.
 #[derive(Clone, Debug, Default)]
 pub struct NifiAuthenticationConfig {
     /// All config properties that have to be added to the given role
     config_properties: HashMap<NifiRole, BTreeMap<String, String>>,
     /// All extra config files required for authentication for each role.
     config_files: HashMap<NifiRole, BTreeMap<String, String>>,
+    /// All extra env variables for the container
+    env_vars: Vec<EnvVar>,
     /// All extra container commands for a certain role and container
     commands: HashMap<NifiRole, BTreeMap<stackable_nifi_crd::Container, Vec<String>>>,
     /// Additional volumes like secret mounts, user file database etc.
@@ -75,25 +98,16 @@ pub struct NifiAuthenticationConfig {
     /// Additional volume mounts for each role and container. Shared volumes have to be added
     /// manually in each container.
     volume_mounts: HashMap<NifiRole, BTreeMap<stackable_nifi_crd::Container, Vec<VolumeMount>>>,
-    /// Additional side car container for the provided role
-    sidecar_containers: HashMap<NifiRole, Vec<Container>>,
 }
 
 impl NifiAuthenticationConfig {
-    pub fn new(
-        resolved_product_image: &ResolvedProductImage,
-        auth_type: NifiAuthenticationType,
-    ) -> Result<Self, Error> {
-        let mut authentication_config = NifiAuthenticationConfig::default();
-
-        match auth_type {
-            NifiAuthenticationType::SingleUser(single_user) => authentication_config
-                .extend(single_user.authentication_config(resolved_product_image)),
-            NifiAuthenticationType::Ldap(ldap) => authentication_config.extend(
-                ldap.authentication_config(resolved_product_image)
-                    .context(InvalidLdapAuthenticationConfigSnafu)?,
-            ),
-        }
+    pub fn new(auth_type: NifiAuthenticationType) -> Result<Self, Error> {
+        let authentication_config = match auth_type {
+            NifiAuthenticationType::SingleUser(single_user) => single_user.authentication_config(),
+            NifiAuthenticationType::Ldap(ldap) => ldap
+                .authentication_config()
+                .context(InvalidLdapAuthenticationConfigSnafu)?,
+        };
 
         trace!("Final Nifi authentication config: {authentication_config:?}",);
 
@@ -109,33 +123,33 @@ impl NifiAuthenticationConfig {
         prepare_builder: &mut ContainerBuilder,
         nifi_builder: &mut ContainerBuilder,
     ) {
-        // volumes
-        pod_builder.add_volumes(self.volumes());
-
-        let affected_containers = vec![
-            stackable_nifi_crd::Container::Prepare,
-            stackable_nifi_crd::Container::Nifi,
-        ];
-
-        for container in &affected_containers {
-            let volume_mounts = self.volume_mounts(&role, container);
-
-            match container {
-                stackable_nifi_crd::Container::Prepare => {
-                    prepare_builder.add_volume_mounts(volume_mounts);
-                }
-                stackable_nifi_crd::Container::Nifi => {
-                    nifi_builder.add_volume_mounts(volume_mounts);
-                }
-                // nothing to do here
-                stackable_nifi_crd::Container::Vector => {}
-            }
-        }
-
-        // containers
-        for container in self.sidecar_containers(&role) {
-            pod_builder.add_container(container);
-        }
+        // // volumes
+        // pod_builder.add_volumes(self.volumes());
+        //
+        // let affected_containers = vec![
+        //     stackable_nifi_crd::Container::Prepare,
+        //     stackable_nifi_crd::Container::Nifi,
+        // ];
+        //
+        // for container in &affected_containers {
+        //     //let volume_mounts = self.volume_mounts(&role, container);
+        //
+        //     match container {
+        //         stackable_nifi_crd::Container::Prepare => {
+        //             prepare_builder.add_volume_mounts(volume_mounts);
+        //         }
+        //         stackable_nifi_crd::Container::Nifi => {
+        //             nifi_builder.add_volume_mounts(volume_mounts);
+        //         }
+        //         // nothing to do here
+        //         stackable_nifi_crd::Container::Vector => {}
+        //     }
+        // }
+        //
+        // // containers
+        // for container in self.sidecar_containers(&role) {
+        //     pod_builder.add_container(container);
+        // }
     }
 
     pub fn add_config_property(
@@ -157,6 +171,11 @@ impl NifiAuthenticationConfig {
             .entry(role)
             .or_insert(BTreeMap::new())
             .insert(file_name, file_content);
+    }
+
+    /// Add an EnvVar to the authentication config
+    pub fn add_env_var(&mut self, env_var: EnvVar) {
+        self.env_vars.push(env_var);
     }
 
     /// Add additional commands for a given role and container.
@@ -204,15 +223,6 @@ impl NifiAuthenticationConfig {
         }
     }
 
-    /// Add an extra sidecar container for a given role
-    pub fn add_sidecar_container(&mut self, role: NifiRole, container: Container) {
-        let containers_for_role = self.sidecar_containers.entry(role).or_insert_with(Vec::new);
-
-        if !containers_for_role.iter().any(|c| c.name == container.name) {
-            containers_for_role.push(container);
-        }
-    }
-
     /// Retrieve additional properties for the `config.properties` file for a given role.
     pub fn config_properties(&self, role: &NifiRole) -> BTreeMap<String, String> {
         self.config_properties
@@ -224,6 +234,12 @@ impl NifiAuthenticationConfig {
     /// Retrieve additional config files for a given role.
     pub fn config_files(&self, role: &NifiRole) -> BTreeMap<String, String> {
         self.config_files.get(role).cloned().unwrap_or_default()
+    }
+
+    /// Retrieve additional env vars
+    // TODO: use nifi role?
+    pub fn env_vars(&self) -> Vec<EnvVar> {
+        self.env_vars.clone()
     }
 
     /// Retrieve additional container commands for a given role and container.
@@ -258,72 +274,12 @@ impl NifiAuthenticationConfig {
             Vec::new()
         }
     }
-
-    /// Retrieve all required sidecar containers for a given role.
-    pub fn sidecar_containers(&self, role: &NifiRole) -> Vec<Container> {
-        self.sidecar_containers
-            .get(role)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    /// This is a helper to easily extend/merge this struct
-    fn extend(&mut self, other: Self) {
-        for (role, data) in other.config_properties {
-            self.config_properties
-                .entry(role)
-                .or_insert_with(BTreeMap::new)
-                .extend(data)
-        }
-
-        for (role, data) in other.config_files {
-            self.config_files
-                .entry(role)
-                .or_insert_with(BTreeMap::new)
-                .extend(data)
-        }
-
-        self.volumes.extend(other.volumes);
-
-        for (role, containers) in other.commands {
-            for (container, commands) in containers {
-                self.commands
-                    .entry(role.clone())
-                    .or_insert_with(BTreeMap::new)
-                    .entry(container)
-                    .or_insert_with(Vec::new)
-                    .extend(commands)
-            }
-        }
-
-        for (role, containers) in other.volume_mounts {
-            for (container, data) in containers {
-                self.volume_mounts
-                    .entry(role.clone())
-                    .or_insert_with(BTreeMap::new)
-                    .entry(container)
-                    .or_insert_with(Vec::new)
-                    .extend(data)
-            }
-        }
-
-        for (role, data) in other.sidecar_containers {
-            self.sidecar_containers
-                .entry(role)
-                .or_insert_with(Vec::new)
-                .extend(data)
-        }
-    }
 }
 
 /// Representation of all NiFi authentication types (e.g. SingleUser, LDAP).
 #[derive(Clone, Debug, strum::Display)]
 pub enum NifiAuthenticationType {
-    #[strum(
-        serialize = "org.apache.nifi.authentication.single.user.SingleUserLoginIdentityProvider"
-    )]
     SingleUser(NifiSingleUserAuthenticator),
-    #[strum(serialize = "org.apache.nifi.ldap.LdapProvider")]
     Ldap(NifiLdapAuthenticator),
 }
 
@@ -339,11 +295,14 @@ impl NifiAuthenticationType {
         let auth_class = auth_classes.first().unwrap();
         let auth_class_name = auth_class.name_any();
         Ok(match &auth_class.spec.provider {
-            AuthenticationClassProvider::Ldap(ldap) => {
-                NifiAuthenticationType::Ldap(NifiLdapAuthenticator::new(&auth_class_name, ldap))
+            AuthenticationClassProvider::Static(static_provider) => {
+                NifiAuthenticationType::SingleUser(NifiSingleUserAuthenticator::new(
+                    &auth_class_name,
+                    static_provider,
+                ))
             }
-            AuthenticationClassProvider::Static(static_) => NifiAuthenticationType::SingleUser(
-                NifiSingleUserAuthenticator::new(&auth_class_name, static_),
+            AuthenticationClassProvider::Ldap(ldap_provider) => NifiAuthenticationType::Ldap(
+                NifiLdapAuthenticator::new(&auth_class_name, ldap_provider),
             ),
             _ => AuthenticationClassProviderNotSupportedSnafu {
                 authentication_class_provider: auth_class.spec.provider.to_string(),
@@ -352,4 +311,18 @@ impl NifiAuthenticationType {
             .fail()?,
         })
     }
+}
+
+fn build_login_identity_provider(content: &str) -> String {
+    let mut login_identity_provider_xml = LOGIN_IDENTITY_PROVIDER_XML_START.to_string();
+    login_identity_provider_xml.push_str(content);
+    login_identity_provider_xml.push_str(LOGIN_IDENTITY_PROVIDER_XML_END);
+    login_identity_provider_xml
+}
+
+fn build_authorizers(content: &str) -> String {
+    let mut authorizers_xml = AUTHORIZERS_XML_START.to_string();
+    authorizers_xml.push_str(content);
+    authorizers_xml.push_str(AUTHORIZERS_XML_END);
+    authorizers_xml
 }

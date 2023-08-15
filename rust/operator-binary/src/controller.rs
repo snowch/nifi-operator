@@ -172,10 +172,6 @@ pub enum Error {
         source: stackable_operator::error::Error,
         obj_ref: ObjectRef<Service>,
     },
-    #[snafu(display("Failed to materialize authentication config element from k8s"))]
-    MaterializeAuthConfig {
-        source: stackable_nifi_crd::authentication::Error,
-    },
     #[snafu(display("Failed to find an external port to use for proxy hosts"))]
     ExternalPort,
     #[snafu(display("Could not build role service fqdn"))]
@@ -191,11 +187,6 @@ pub enum Error {
     IllegalContainerName {
         source: stackable_operator::error::Error,
         container_name: String,
-    },
-    #[snafu(display("failed to validate resources for {rolegroup}"))]
-    ResourceValidation {
-        source: fragment::ValidationError,
-        rolegroup: RoleGroupRef<NifiCluster>,
     },
     #[snafu(display("failed to resolve and merge config for role and role group"))]
     FailedToResolveConfig { source: stackable_nifi_crd::Error },
@@ -264,7 +255,6 @@ pub async fn reconcile_nifi(nifi: Arc<NifiCluster>, ctx: Arc<Ctx>) -> Result<Act
         .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::CARGO_PKG_VERSION);
 
     let authentication_config = NifiAuthenticationConfig::new(
-        &resolved_product_image,
         NifiAuthenticationType::try_from(
             resolve_authentication_classes(client, &nifi.spec.cluster_config.authentication)
                 .await
@@ -782,6 +772,8 @@ async fn build_node_rolegroup_statefulset(
         &nifi.spec.cluster_config.zookeeper_config_map_name,
     ));
 
+    env_vars.extend(authentication_config.env_vars());
+
     let node_address = format!(
         "$POD_NAME.{}-node-{}.{}.svc.cluster.local",
         rolegroup_ref.cluster.name,
@@ -842,7 +834,7 @@ async fn build_node_rolegroup_statefulset(
     ]);
 
     // Add required authentication commands
-    args.extend(authentication_config.commands(nifi_role, &Container::Nifi));
+    args.extend(authentication_config.commands(nifi_role, &Container::Prepare));
 
     let mut container_prepare =
         ContainerBuilder::new(&prepare_container_name).with_context(|_| {
@@ -894,6 +886,10 @@ async fn build_node_rolegroup_statefulset(
                 .with_memory_limit("4096Mi")
                 .build(),
         );
+
+    container_prepare.add_volume_mounts(
+        authentication_config.volume_mounts(&NifiRole::Node, &Container::Prepare),
+    );
 
     let nifi_container_name = Container::Nifi.to_string();
     let mut container_builder = ContainerBuilder::new(&nifi_container_name).with_context(|_| {
