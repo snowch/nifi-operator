@@ -36,7 +36,10 @@ kind: Secret
 metadata:
   name: simple-nifi-admin-user-secret
 stringData:
-  admin: supersecretpassword
+  # The admin user is required for a working single user NiFi deployment. The password can be changed as desired.
+  admin: admin
+  # Will not be read and used by NiFi (e.g. in case of reusing a Secret)
+  bob: bob
 ---
 apiVersion: nifi.stackable.tech/v1alpha1
 kind: NifiCluster

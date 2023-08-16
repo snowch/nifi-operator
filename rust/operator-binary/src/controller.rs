@@ -878,6 +878,10 @@ async fn build_node_rolegroup_statefulset(
         .add_volume_mount("activeconf", "/stackable/nifi/conf")
         .add_volume_mount("sensitiveproperty", "/stackable/sensitiveproperty")
         .add_volume_mount("log", STACKABLE_LOG_DIR)
+        // TODO: test
+        .add_volume_mounts(
+            authentication_config.volume_mounts(&NifiRole::Node, &Container::Prepare),
+        )
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("500m")
@@ -886,10 +890,6 @@ async fn build_node_rolegroup_statefulset(
                 .with_memory_limit("4096Mi")
                 .build(),
         );
-
-    container_prepare.add_volume_mounts(
-        authentication_config.volume_mounts(&NifiRole::Node, &Container::Prepare),
-    );
 
     let nifi_container_name = Container::Nifi.to_string();
     let mut container_builder = ContainerBuilder::new(&nifi_container_name).with_context(|_| {
@@ -1080,6 +1080,7 @@ async fn build_node_rolegroup_statefulset(
             name: "activeconf".to_string(),
             ..Volume::default()
         })
+        .add_volumes(authentication_config.volumes())
         .service_account_name(sa_name)
         .security_context(
             PodSecurityContextBuilder::new()

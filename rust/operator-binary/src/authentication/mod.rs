@@ -69,14 +69,6 @@ pub enum Error {
         authentication_class_provider: String,
         authentication_class: ObjectRef<AuthenticationClass>,
     },
-    // #[snafu(display("Failed to format nifi authentication java properties"))]
-    // FailedToWriteJavaProperties {
-    //     source: product_config::writer::PropertiesWriterError,
-    // },
-    // #[snafu(display("Failed to configure Nifi SingleUser authentication"))]
-    // InvalidSingleUserAuthenticationConfig { source: single_user::Error },
-    #[snafu(display("Failed to configure Nifi LDAP authentication"))]
-    InvalidLdapAuthenticationConfig { source: ldap::Error },
 }
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -104,12 +96,10 @@ impl NifiAuthenticationConfig {
     pub fn new(auth_type: NifiAuthenticationType) -> Result<Self, Error> {
         let authentication_config = match auth_type {
             NifiAuthenticationType::SingleUser(single_user) => single_user.authentication_config(),
-            NifiAuthenticationType::Ldap(ldap) => ldap
-                .authentication_config()
-                .context(InvalidLdapAuthenticationConfigSnafu)?,
+            NifiAuthenticationType::Ldap(ldap) => ldap.authentication_config(),
         };
 
-        trace!("Final Nifi authentication config: {authentication_config:?}",);
+        trace!("Final Nifi authentication config: {authentication_config:?}");
 
         Ok(authentication_config)
     }
