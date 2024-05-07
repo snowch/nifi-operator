@@ -30,6 +30,8 @@ metadata:
 spec:
   image:
     productVersion: "{{ test_scenario['values']['nifi-latest'] }}"
+    repo: docker.stackable.tech/sandbox/ubi9
+    stackableVersion: 0.0.0-dev
     pullPolicy: IfNotPresent
   clusterConfig:
     authentication:
