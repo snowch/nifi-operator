@@ -33,4 +33,4 @@ shadowMax: 0
 shadowWarning: 0
 EOF
 
-ldappasswd -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin -s integrationtest "cn=integrationtest,ou=my users,dc=example,dc=org"
+ldappasswd -H ldap://localhost:1389 -D cn=admin,dc=example,dc=org -w admin -s 'passWithSpecialCharacter\@<&>"'"'" "cn=integrationtest,ou=my users,dc=example,dc=org"
