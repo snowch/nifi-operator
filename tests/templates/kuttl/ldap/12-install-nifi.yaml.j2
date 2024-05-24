@@ -15,7 +15,7 @@ metadata:
 stringData:
   user: cn=integrationtest,ou=my users,dc=example,dc=org
   password: >
-    passWithSpecialCharacter\@<&>"'
+    bindPasswordWithSpecialCharacter\\@\&lt\;\&amp\;\&gt\;\&quot\;\&apos\;
 ---
 apiVersion: nifi.stackable.tech/v1alpha1
 kind: NifiCluster
@@ -43,6 +43,7 @@ spec:
     vectorAggregatorConfigMapName: vector-aggregator-discovery
 {% endif %}
     zookeeperConfigMapName: nifi-with-ldap-znode
+    listenerClass: external-unstable
   nodes:
     config:
       logging:
