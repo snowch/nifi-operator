@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<loginIdentityProviders>
+  <provider>
+    <identifier>login-identity-provider</identifier>
+    <class>org.apache.nifi.ldap.LdapProvider</class>
+    <property name="Authentication Strategy">LDAPS</property>
+    <property name="Manager DN">my-user</property>
+    <property name="Manager Password">my-password</property>
+  </provider>
+</loginIdentityProviders>
